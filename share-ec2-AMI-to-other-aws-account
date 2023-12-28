@@ -1,0 +1,46 @@
+import boto3
+import datetime
+
+def share_images_to_other_region():
+    source_region = 'us-east-1'  # Replace with the region where the AMIs are located
+    target_region = 'us-east-1'  # Replace with the region where you want to share the AMIs
+    ec2_client = boto3.client('ec2', region_name=source_region)
+    response = ec2_client.describe_images(
+        Owners=['474595934970'],
+        Filters=[
+            {'Name': 'state', 'Values': ['available']},
+            {'Name': 'image-type', 'Values': ['machine']},
+            {'Name': 'name', 'Values': ['*Prod*', '*PROD*']}
+        ],
+    )
+    current_date = datetime.datetime.now().date()
+    shared_ami_ids = []
+    for image in response['Images']:
+        creation_date_str = image['CreationDate'].split('T')[0]
+        creation_date = datetime.datetime.strptime(creation_date_str, '%Y-%m-%d').date()
+        if creation_date == current_date:
+            ami_id = image['ImageId']
+            # Share AMI
+            ec2_client.modify_image_attribute(
+                ImageId=ami_id,
+                LaunchPermission={'Add': [{'UserId': '540371079963'}]},  # Replace with the AWS account ID of the target account
+                Attribute='launchPermission',
+            )
+            shared_ami_ids.append(ami_id)
+            
+            # Add CreateVolumePermission to associated snapshots
+            devices = image['BlockDeviceMappings']
+            for device in devices:
+                if 'Ebs' in device:
+                    snapshot_id = device['Ebs']['SnapshotId']
+                    ec2_client.modify_snapshot_attribute(
+                        SnapshotId=snapshot_id,
+                        CreateVolumePermission={'Add': [{'UserId': '540371079963'}]},  # Replace with the AWS account ID of the target account
+                        Attribute='createVolumePermission',
+                    )
+    return shared_ami_ids
+
+def lambda_handler(event, context):
+    target_region = 'us-east-1'  # Replace with the region where you want to share the AMIs
+    shared_ami_ids = share_images_to_other_region()
+    print(f"AMI Images shared to {target_region} region: {shared_ami_ids}")
