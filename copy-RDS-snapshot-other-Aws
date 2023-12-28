@@ -1,0 +1,51 @@
+import boto3
+from datetime import datetime, timedelta
+
+def lambda_handler(event, context):
+    # Initialize the AWS RDS client
+    rds_client = boto3.client('rds')
+    
+    # Get your AWS account ID
+    current_account_id = boto3.client('sts').get_caller_identity().get('Account')
+    
+    # Specify the destination AWS account ID
+    destination_account_id = 'paste_accout_id'
+    
+    # Specify the KMS key ID to filter by
+    filter_kms_key_id = "kms_key"
+    
+    # Calculate date range for today
+    today = datetime.utcnow()
+    start_of_day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # List manual RDS snapshots
+    response = rds_client.describe_db_snapshots(
+        SnapshotType='manual',
+        IncludeShared=False
+    )
+    
+    # Filter and share snapshots that meet the date and KMS key criteria
+    for snapshot in response.get('DBSnapshots', []):
+        snapshot_date = snapshot.get('SnapshotCreateTime')
+        snapshot_identifier = snapshot.get('DBSnapshotIdentifier')
+        kms_key_id = snapshot.get('KmsKeyId')
+        
+        if snapshot_date is not None and kms_key_id == filter_kms_key_id:
+            snapshot_date = snapshot_date.replace(tzinfo=None)
+            
+            if snapshot_date >= start_of_day:
+                print(f"Sharing Snapshot: {snapshot_identifier}, Date: {snapshot_date}")
+                try:
+                    rds_client.modify_db_snapshot_attribute(
+                        DBSnapshotIdentifier=snapshot_identifier,
+                        AttributeName='restore',
+                        ValuesToAdd=[destination_account_id],
+                    )
+                    print(f"Shared Snapshot '{snapshot_identifier}' with AWS account '{destination_account_id}'")
+                except Exception as e:
+                    print(f"Error sharing snapshot '{snapshot_identifier}': {str(e)}")
+    
+    return {
+        'statusCode': 200,
+        'body': 'Snapshot sharing complete'
+    }
