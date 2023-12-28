@@ -1,0 +1,23 @@
+import boto3
+
+def lambda_handler(event, context):
+    # Replace these values with your own
+    rds_instance_id = 'rds_name'
+    
+    # Initialize the RDS client
+    rds_client = boto3.client('rds')
+    
+    try:
+        # Start the RDS instance
+        response = rds_client.start_db_instance(
+            DBInstanceIdentifier=rds_instance_id
+        )
+        
+        # Check the status of the RDS instance
+        if response['DBInstance']['DBInstanceStatus'] == 'starting':
+            return f"Starting RDS instance {rds_instance_id}..."
+        else:
+            return f"RDS instance {rds_instance_id} is already starting."
+    
+    except Exception as e:
+        return f"Error starting RDS instance {rds_instance_id}: {str(e)}"
