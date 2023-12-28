@@ -1,0 +1,17 @@
+import boto3
+
+def lambda_handler(event, context):
+    # Instance IDs of the EC2 instances to start
+    instance_ids = [instance_id ]
+
+    # Create an EC2 client object
+    ec2 = boto3.client('ec2')
+
+    # Stop the EC2 instances
+    response = ec2.start_instances(
+        InstanceIds=instance_ids,
+        DryRun=False
+    )
+
+    # Print the response
+    print(response)
