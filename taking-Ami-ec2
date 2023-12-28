@@ -1,0 +1,37 @@
+import boto3
+import datetime
+
+ec2 = boto3.client('ec2', region_name='us-east-1')
+
+# List of instance IDs to exclude from backup
+instances_to_exclude = ['instance_id']
+
+def lambda_handler(event, context):
+    now = datetime.datetime.utcnow()
+    date_str = now.strftime('%d-%m-%y')
+    filters = [{'Name': 'instance-state-name', 'Values': ['running']}]
+    instances = ec2.describe_instances(Filters=filters)
+    
+    for reservation in instances['Reservations']:
+        for instance in reservation['Instances']:
+            instance_id = instance['InstanceId']
+            
+            # Check if the instance should be excluded
+            if instance_id in instances_to_exclude:
+                print(f'Skipping instance {instance_id} as it is in the exclusion list.')
+                continue
+            
+            name_tag = [tag for tag in instance['Tags'] if tag['Key'] == 'Name']
+            if name_tag:
+                image_name = name_tag[0]['Value'] + '-' + date_str
+            else:
+                image_name = instance_id + '-' + date_str
+            image_desc = 'Backup of EC2 instance ' + instance_id
+            
+            response = ec2.create_image(
+                InstanceId=instance_id,
+                Name=image_name,
+                Description=image_desc,
+                NoReboot=True
+            )
+            print('Created image:', response['ImageId'])
