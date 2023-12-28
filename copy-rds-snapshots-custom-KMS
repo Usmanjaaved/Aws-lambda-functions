@@ -1,0 +1,61 @@
+import boto3
+import re
+from datetime import datetime
+
+def find_today_snapshots(rds_client, instance_names):
+    try:
+        paginator = rds_client.get_paginator('describe_db_snapshots')
+        snapshots = []
+        for page in paginator.paginate(SnapshotType='manual', IncludeShared=False):  # Change SnapshotType to 'manual'
+            snapshots.extend(page['DBSnapshots'])
+        # Get current date in UTC and filter snapshots taken today
+        today = datetime.utcnow().date()
+        today_snapshots = [
+            snapshot for snapshot in snapshots
+            if snapshot['DBInstanceIdentifier'] in instance_names
+            and parse_snapshot_date(snapshot['DBSnapshotIdentifier']) == today
+        ]
+        return today_snapshots
+    except Exception as e:
+        print(f"Error occurred while finding snapshots: {str(e)}")
+        return []
+
+def parse_snapshot_date(snapshot_name):
+    try:
+        date_pattern = r'\d{4}-\d{2}-\d{2}'
+        date_match = re.search(date_pattern, snapshot_name)
+        if date_match:
+            date_str = date_match.group()
+            return datetime.strptime(date_str, '%Y-%m-%d').date()
+        else:
+            return None
+    except Exception as e:
+        print(f"Error occurred while parsing snapshot date: {str(e)}")
+        return None
+
+def create_snapshot_copy_with_kms(rds_client, snapshot):
+    try:
+        copy_snapshot_params = {
+            'SourceDBSnapshotIdentifier': snapshot['DBSnapshotArn'],
+            'TargetDBSnapshotIdentifier': f"{snapshot['DBSnapshotIdentifier']}-copy-with-kms",
+            'KmsKeyId': 'KMS_ARN',  # Specify your KMS key ARN
+        }
+        rds_client.copy_db_snapshot(**copy_snapshot_params)
+        print(f"Snapshot copy created with KMS: {copy_snapshot_params['TargetDBSnapshotIdentifier']}")
+    except Exception as e:
+        print(f"Error occurred while creating snapshot copy with KMS: {str(e)}")
+
+def lambda_handler(event, context):
+    source_region = 'us-east-1'
+    rds_client = boto3.client('rds', region_name=source_region)
+    instance_names_to_filter = ['apm-rds', 'idirect', 'dillners-vo-prod', 'dillnercms-mysql8', 'devboxnew', 'cellercise-api']
+    today_snapshots = find_today_snapshots(rds_client, instance_names_to_filter)
+    print(f"Today's RDS Snapshots for specific instances: {today_snapshots}")
+    
+    for snapshot in today_snapshots:
+        create_snapshot_copy_with_kms(rds_client, snapshot)
+    
+    return {
+        'statusCode': 200,
+        'body': f"Snapshot copies created with KMS: {[snapshot['DBSnapshotIdentifier'] for snapshot in today_snapshots]}"
+    }
